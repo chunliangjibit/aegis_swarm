@@ -1,17 +1,17 @@
 {
-    "fortified_scouts_with_strikers_vs_fearless_charge_strategy": {
+    "Scouts(passive_scan_strategy) + Strikers(mission_focus_strategy)_vs_loose_formation_charge_strategy": {
         "scores": [
-            -3100,
-            -3100,
-            -2400,
-            -3100,
-            327.02645960395694,
-            -1500,
-            2709.8407223297454,
-            1200,
-            -3500,
-            -3500
+            1762.5764465551465,
+            1412.6075142208156,
+            1671.9154017259698,
+            1700.5017613321106,
+            2194.7042989229376,
+            -3300,
+            2435.7693784080466,
+            1486.4304294274698,
+            -25.65662623379194,
+            2721.0525210154474
         ],
-        "average_payoff": -1596.31328180663
+        "average_payoff": 1205.9901125374156
     }
 }

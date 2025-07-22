@@ -1,4 +1,4 @@
-# Aegis Swarm 2.0 - Configuration File (Tactical Upgrade: Fortified Scouts)
+# Aegis Swarm 2.0 - Configuration File (Ultimate Version)
 
 GLOBAL_SIMULATION_SETTINGS = {
     'SCREEN_WIDTH': 1600, 'SCREEN_HEIGHT': 900, 'FPS': 60, 'BOUNDARY_BEHAVIOR': "wrap",
@@ -6,38 +6,27 @@ GLOBAL_SIMULATION_SETTINGS = {
     'RED_COLOR': (255, 50, 50), 'HEALTH_BAR_GREEN': (0, 255, 0), 'HEALTH_BAR_RED': (255, 0, 0),
 }
 WEAPON_TEMPLATES = {
-    "SUICIDE_FRAG_V1": { "type": "suicide_aoe", "detonation_range": 15.0, "kill_radius": 25.0, "damage_radius": 55.0, "kill_prob": 0.95, "base_damage": 80 },
-    "PULSE_LASER_V1": { "type": "dps", "weapon_range": 100.0, "damage_per_second": 20 }
+    "SUICIDE_FRAG_V1": { "type": "suicide_aoe", "detonation_range": 15.0, "kill_radius": 25.0, "damage_radius": 55.0, "kill_prob": 0.95, "base_damage": 80 }
 }
 ROLE_TEMPLATES = {
     "SCOUT_CHASSIS": { "health": 50, "max_speed": 4.0, "perception_radius": 250.0, "drone_radius": 4 },
-    "STRIKER_CHASSIS": { "health": 100, "max_speed": 3.0, "perception_radius": 150.0, "drone_radius": 5 },
-    "HEAVY_CHASSIS": { "health": 200, "max_speed": 2.2, "perception_radius": 180.0, "drone_radius": 7 }
+    "STRIKER_CHASSIS": { "health": 100, "max_speed": 3.0, "perception_radius": 150.0, "drone_radius": 5 }
 }
 TEAM_BLUE_CONFIG = {
     "name": "Blue", "id": 1, "color": GLOBAL_SIMULATION_SETTINGS['BLUE_COLOR'], "deployment_zone": "left",
     "swarm_composition": {
-        # 【战术升级 A】
-        "fortified_scouts": {
-            "role_template": "STRIKER_CHASSIS", # 使用更坚固的底盘
-            "weapon_template": None,
-            "count": 12,                        # 数量增加到12
-            "boids_weights": {"separation": 2.5, "alignment": 0.3, "cohesion": 0.2},
-            "strategy": "bait_and_observe"
-        },
-        "strikers": {
-            "role_template": "STRIKER_CHASSIS",
-            "weapon_template": "SUICIDE_FRAG_V1",
-            "count": 38,                        # 数量相应减少，总数仍为50
-            "boids_weights": {"separation": 1.8, "alignment": 0.5, "cohesion": 0.4},
-            "strategy": "wait_for_hva_and_strike"
-        }
+        "scouts": { "role_template": "STRIKER_CHASSIS", "weapon_template": None, "count": 12, "boids_weights": {"separation": 2.5, "alignment": 0.3, "cohesion": 0.2}, "strategy": "bait_and_observe_strategy" },
+        "strikers": { "role_template": "STRIKER_CHASSIS", "weapon_template": "SUICIDE_FRAG_V1", "count": 38, "boids_weights": {"separation": 1.8, "alignment": 0.5, "cohesion": 0.4}, "strategy": "mission_focus_strategy" }
     }
 }
 TEAM_RED_CONFIG = {
     "name": "Red", "id": 2, "color": GLOBAL_SIMULATION_SETTINGS['RED_COLOR'], "deployment_zone": "right",
+    # 【新增】Parameters for red team strategies
+    "strategy_params": {
+        "split_attack_groups": 3
+    },
     "swarm_composition": {
-        "aggressors": { "role_template": "STRIKER_CHASSIS", "weapon_template": "SUICIDE_FRAG_V1", "count": 70, "boids_weights": {"separation": 1.8, "alignment": 0.5, "cohesion": 0.4}, "strategy": "fearless_charge" }
+        "aggressors": { "role_template": "STRIKER_CHASSIS", "weapon_template": "SUICIDE_FRAG_V1", "count": 70, "boids_weights": {"separation": 1.8, "alignment": 0.5, "cohesion": 0.4}, "strategy": "fearless_charge_strategy" }
     }
 }
 INTELLIGENCE_CONFIG = {
