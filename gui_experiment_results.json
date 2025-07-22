@@ -1,17 +1,17 @@
 {
-    "Scouts(passive_scan_strategy) + Strikers(mission_focus_strategy)_vs_loose_formation_charge_strategy": {
+    "Scouts(bait_and_observe_strategy) + Strikers(mission_focus_strategy)_vs_fearless_charge_strategy": {
         "scores": [
-            1762.5764465551465,
-            1412.6075142208156,
-            1671.9154017259698,
-            1700.5017613321106,
-            2194.7042989229376,
-            -3300,
-            2435.7693784080466,
-            1486.4304294274698,
-            -25.65662623379194,
-            2721.0525210154474
+            1090.77,
+            390.61,
+            -1666.52,
+            1338.58,
+            -617.7,
+            -1002.95,
+            1612.75,
+            883.64,
+            77.2,
+            -842.4
         ],
-        "average_payoff": 1205.9901125374156
+        "average_payoff": 126.39799999999995
     }
 }
