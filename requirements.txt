@@ -1,0 +1,5 @@
+PyQt5
+PyYAML
+numpy
+pygame
+numba
