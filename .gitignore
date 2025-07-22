@@ -1,10 +1,28 @@
 # Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 
 # Virtual environment
 venv/
 .venv/
+env/
+*.env
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
 
 # VSCode
 .vscode/
+
+# Numba cache
+*.nbi
+*.nbc
+
+# 【核心升级】: Simulation data and logs
+# Do not track the generated replay files, as they can be large and numerous.
+replays/
+*.json
