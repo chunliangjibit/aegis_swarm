@@ -1,88 +1,79 @@
 # Aegis Swarm 2.0 - Blue Team Strategy Library (Ultimate Version)
-import pygame, random
+# DECISIVE FIX v3: Strategies now continuously provide a navigation target (target_pos).
+
+import numpy as np
+from core.task import Task
+import random
+
+def get_closest_enemy(agent, enemies):
+    if not enemies: return None
+    enemy_positions = np.array([e.pos for e in enemies])
+    distances_sq = np.sum((enemy_positions - agent.pos)**2, axis=1)
+    closest_index = np.argmin(distances_sq)
+    return enemies[closest_index]
 
 def strategy_dispatcher(agent, battlefield_intel):
-    """ The single entry point for the blue team's decision making. """
     strategy_name = agent.strategy_name
-    
-    # Direct mapping from strategy name to function
-    strategy_function = globals().get(strategy_name)
-    if strategy_function:
-        strategy_function(agent, battlefield_intel)
-    else:
-        # Fallback if a strategy function is not found
-        passive_flock_strategy(agent, battlefield_intel)
+    strategy_function = globals().get(strategy_name, striker_market_participant_strategy)
+    strategy_function(agent, battlefield_intel)
 
-# --- SCOUT STRATEGIES ---
-def bait_and_observe_strategy(agent, battlefield_intel):
-    """ Actively moves towards enemy concentration to paint targets. """
-    known_enemies = battlefield_intel['shared_picture'].get_known_enemies()
-    if known_enemies:
-        avg_enemy_pos = sum((e['pos'] for e in known_enemies), pygame.math.Vector2()) / len(known_enemies)
-        agent.target_pos = avg_enemy_pos
-    else: # Patrol if no enemies are known
-        if agent.target_pos is None or agent.pos.distance_to(agent.target_pos) < 50:
-            agent.target_pos = pygame.math.Vector2(random.uniform(agent.drone_radius, battlefield_intel['screen_width'] - agent.drone_radius),
-                                                 random.uniform(agent.drone_radius, battlefield_intel['screen_height'] - agent.drone_radius))
+def _publish_new_enemies(enemies, marketplace, known_enemy_ids, screen_width):
+    if marketplace is None or known_enemy_ids is None: return
+    for enemy in enemies:
+        if enemy.id not in known_enemy_ids:
+            value = 1.0 + (enemy.pos[0] / screen_width) * 2.0
+            new_task = Task(position=enemy.pos.copy(), value=value)
+            new_task.enemy_target_id = enemy.id 
+            marketplace.add_task(new_task)
+            known_enemy_ids.add(enemy.id)
 
-def passive_scan_strategy(agent, battlefield_intel):
-    """ Holds a defensive line, forming a sensor screen. """
-    # Patrol along a vertical line in the friendly zone
-    patrol_x = battlefield_intel['screen_width'] / 3
-    if agent.target_pos is None or agent.pos.distance_to(agent.target_pos) < 50:
-        agent.target_pos = pygame.math.Vector2(patrol_x, random.uniform(50, battlefield_intel['screen_height'] - 50))
-
-# --- STRIKER STRATEGIES ---
-def hva_only_strategy(agent, battlefield_intel):
-    """ The 'dumb missile' - only attacks designated HVAs, no self-defense. """
-    hva_target = battlefield_intel['shared_picture'].get_highest_value_area()
-    if hva_target:
-        agent.target_pos = hva_target['pos']
-        if agent.weapon_template and agent.pos.distance_to(agent.target_pos) < agent.weapon_template["detonation_range"]:
-            agent.is_detonating = True
-    else: agent.target_pos = None
-
-def self_defense_priority_strategy(agent, battlefield_intel):
-    """ Our 'Elastic Defense'. Prioritizes any local threat over HVA targets. """
+# --- SCOUT STRATEGY ---
+def scout_evade_and_publish_strategy(agent, battlefield_intel):
     local_enemies = battlefield_intel['neighbors']['enemies']
+    screen_width = battlefield_intel['screen_width']
+    
+    _publish_new_enemies(local_enemies, battlefield_intel.get('marketplace'), battlefield_intel.get('known_enemy_ids'), screen_width)
+
+    # 1. Evasion
     if local_enemies:
-        closest_enemy = min(local_enemies, key=lambda e: agent.pos.distance_to(e.pos))
-        if agent.pos.distance_to(closest_enemy.pos) < agent.self_defense_radius: # Use dynamic radius
-            agent.target_pos = closest_enemy.pos
-            if agent.weapon_template and agent.pos.distance_to(agent.target_pos) < agent.weapon_template["detonation_range"]:
-                agent.is_detonating = True
+        closest_enemy = get_closest_enemy(agent, local_enemies)
+        if np.linalg.norm(agent.pos - closest_enemy.pos) < agent.self_defense_radius * 2.0:
+            flee_vector = agent.pos - closest_enemy.pos
+            norm = np.linalg.norm(flee_vector)
+            if norm > 0:
+                agent.target_pos = agent.pos + (flee_vector / norm) * 200
+            else: # If on top of enemy, flee in a random direction
+                agent.target_pos = agent.pos + np.random.uniform(-1,1,size=2) * 200
             return
-    # If no immediate threat, fall back to HVA attack logic
-    hva_only_strategy(agent, battlefield_intel)
 
-def mission_focus_strategy(agent, battlefield_intel):
-    """ The 'Attack Corridor' logic. Prioritizes HVA and only defends against critical threats. """
-    hva_target = battlefield_intel['shared_picture'].get_highest_value_area()
-    # Determine if we are on an attack run
-    on_attack_run = hva_target is not None
-    
+    # 2. Persistent Patrol
+    if agent.target_pos is None or np.linalg.norm(agent.pos - agent.target_pos) < 150:
+        w, h = battlefield_intel['screen_width'], battlefield_intel['screen_height']
+        agent.target_pos = np.array([random.uniform(w * 0.5, w * 0.9), random.uniform(h * 0.1, h * 0.9)], dtype=float)
+
+# --- STRIKER STRATEGY ---
+def striker_market_participant_strategy(agent, battlefield_intel):
     local_enemies = battlefield_intel['neighbors']['enemies']
+    screen_width = battlefield_intel['screen_width']
+    
+    _publish_new_enemies(local_enemies, battlefield_intel.get('marketplace'), battlefield_intel.get('known_enemy_ids'), screen_width)
+
+    # 1. Self-Defense Override
     if local_enemies:
-        closest_enemy = min(local_enemies, key=lambda e: agent.pos.distance_to(e.pos))
-        
-        # Define defense radius based on current mode
-        defense_radius = agent.self_defense_radius / 3.0 if on_attack_run else agent.self_defense_radius
-        
-        if agent.pos.distance_to(closest_enemy.pos) < defense_radius:
+        closest_enemy = get_closest_enemy(agent, local_enemies)
+        if np.linalg.norm(agent.pos - closest_enemy.pos) < agent.self_defense_radius:
             agent.target_pos = closest_enemy.pos
-            if agent.weapon_template and agent.pos.distance_to(agent.target_pos) < agent.weapon_template["detonation_range"]:
+            if agent.weapon_template and np.linalg.norm(agent.pos - closest_enemy.pos) < agent.weapon_template['detonation_range']:
                 agent.is_detonating = True
             return
 
-    # If not defending, and on an attack run, set target to HVA
-    if on_attack_run:
-        agent.target_pos = hva_target['pos']
-        if agent.weapon_template and agent.pos.distance_to(agent.target_pos) < agent.weapon_template["detonation_range"]:
-            agent.is_detonating = True
-    else:
-        agent.target_pos = None # Otherwise, hold and flock
-
-# --- FALLBACK ---
-def passive_flock_strategy(agent, battlefield_intel):
-    """ A fallback strategy: do nothing, just flock. """
-    agent.target_pos = None
+    # 2. Execute Market Task
+    if agent.tour:
+        agent.target_pos = agent.tour[0].position
+        return
+        
+    # 3. Default Behavior: Rally
+    # If no threats and no tour, rally near the base.
+    if agent.target_pos is None or np.linalg.norm(agent.pos - agent.target_pos) < 50:
+        rally_point = agent.base_pos + np.array([200, random.uniform(-200, 200)])
+        agent.target_pos = rally_point

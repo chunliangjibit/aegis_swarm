@@ -22,7 +22,6 @@ dist/
 *.nbi
 *.nbc
 
-# 【核心升级】: Simulation data and logs
 # Do not track the generated replay files, as they can be large and numerous.
 replays/
 *.json
