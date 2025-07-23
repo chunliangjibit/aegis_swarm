@@ -1,6 +1,5 @@
-# Aegis Swarm 3.0 - Core Agent Class (Patch 3.0.5 - Final Stand)
-# PATCH: Removed the fundamentally flawed "Rationality Check" in the bidding
-# function, which was the true root cause of the behavioral deadlock.
+# Aegis Swarm 3.2 - Core Agent Class (Visual ID Edition)
+# UPGRADED: Agent now initializes with its specific role name and color.
 
 import pygame
 import uuid
@@ -10,14 +9,24 @@ import time
 from core.task import Task
 
 class Agent:
-    def __init__(self, team_config, role_config, initial_pos, market_config):
+    def __init__(self, team_config, role_name, role_config, initial_pos, market_config):
         self.id = uuid.uuid4(); self.is_alive = True
-        self.team_id = team_config['id']; self.color = team_config['color']
-        self.role_template = role_config['role_template']; self.weapon_template = role_config.get('weapon_template')
-        self.strategy_name = role_config['strategy']; self.boids_weights = role_config['boids_weights']
+        self.team_id = team_config['id']
+        
+        # --- [MODIFIED] Store role name and get role-specific color ---
+        self.role_name = role_name
+        self.color = role_config.get('color', team_config.get('color', (255,255,255))) # Use role color, fallback to team, then white
+        
+        self.role_template = role_config['role_template']
+        self.weapon_template = role_config.get('weapon_template')
+        
+        self.strategy_name = role_config.get('strategy', '')
+        self.boids_weights = role_config.get('boids_weights', {"separation": 1.0, "alignment": 1.0, "cohesion": 1.0})
+        
         self.max_health = self.role_template['health']; self.health = self.role_template['health']
         self.max_speed = self.role_template['max_speed']; self.perception_radius = self.role_template['perception_radius']
         self.drone_radius = self.role_template['drone_radius']
+        
         self.market_config = market_config
         self.pos = np.array(initial_pos, dtype=float)
         random_velocity = np.random.uniform(-1, 1, size=2)
@@ -31,7 +40,10 @@ class Agent:
         self.base_pos = self.pos.copy()
         self.self_defense_radius = 75.0; self.group_id = 0
         self.time_of_death = None; self.death_linger_duration = 0.5
+        
+        self.strategy_profile = {}
 
+    # ... (The rest of the file is identical to the last working version) ...
     def is_truly_dead(self, current_time):
         if self.health <= 0 and self.time_of_death is not None:
             return current_time - self.time_of_death > self.death_linger_duration
@@ -49,23 +61,10 @@ class Agent:
 
     def calculate_bid_for_task(self, task: Task, all_market_tasks):
         if not self.weapon_template: return None
-
-        # Step 1: Calculate the base travel cost (distance)
         travel_cost = np.linalg.norm(self.pos - task.position) + np.linalg.norm(task.position - self.base_pos)
-
-        # Step 2: Assess the risk
         risk_score = self.assess_risk(task, all_market_tasks)
-
-        # Step 3: Calculate the final bid (cost adjusted by risk)
         risk_factor = self.market_config['RISK_AVERSION_FACTOR']
         final_bid = travel_cost * (1 + risk_score * risk_factor)
-
-        # --- [THE FINAL, CRITICAL FIX] ---
-        # The flawed "Rationality Check" has been completely removed.
-        # The core logic of "lowest cost/risk wins" is sufficient and robust.
-        # if final_bid > task.current_value * 50:
-        #      return None
-
         return final_bid
 
     def add_task_to_tour(self, task: Task):
