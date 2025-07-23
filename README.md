@@ -1,26 +1,39 @@
-# Aegis Swarm 2.5 - Tactical AI Laboratory (Intelligent Marketplace Edition)
+# Aegis Swarm 3.2 - Advanced Tactical Laboratory
 
 **Aegis Swarm** is an advanced, agent-based 2D simulation platform for Unmanned Aerial Vehicle (UAV) swarm confrontations. It is designed to explore, validate, and quantify the effectiveness of complex swarm intelligence tactics through rigorous, data-driven experimentation.
 
-The core feature of the current version (v2.5) is a **decentralized, "intelligent marketplace" AI for task allocation**, which replaces traditional centralized command-and-control models.
+This version (v3.2) introduces a revolutionary **Market-Based AI** for the Blue Team and a modular **Mission-Driven AI** for the Red Team, creating a high-fidelity environment for sophisticated tactical wargaming.
 
 ---
 
 ## Core Features
 
-- **High-Fidelity Agent Modeling**: Each UAV is an independent agent (`Agent`) with its own physical attributes, state, and decision-making logic.
-- **Emergent Swarm Intelligence**: Built upon the classic Boids model, the swarm exhibits fluid and organized flocking behaviors.
-- **Revolutionary Marketplace AI**:
-  - **Decentralized Decision-Making**: The Blue team's task allocation is no longer dependent on a central authority. A **decentralized marketplace (`Marketplace`)** uses an auction mechanism to efficiently assign tasks to the agent that can perform them at the lowest cost.
-  - **Role Specialization**: The swarm is divided into **Scouts** and **Strikers**.
-    - **Scouts** proactively search the battlefield and publish discovered enemies as high-value "bounty" tasks to the market.
-    - **Strikers** act as rational "bounty hunters," bidding on these tasks to execute attacks.
-  - **Resilient Intelligence Network**: Embodying the "Every Platform is a Sensor" concept, all agents—including Strikers—contribute to situational awareness by publishing new intelligence, creating a robust network with no single point of failure.
-- **Configurable Adversary AI**: The Red team possesses multiple configurable strategies (e.g., distributed attack), providing a challenging and intelligent opponent for testing the Blue AI.
+- **High-Fidelity Agent Modeling**: Each UAV is an independent agent (`Agent`) with its own physical attributes, state, and decision-making logic, now featuring distinct visual identification for different roles.
+
+- **Blue Team: Intelligent Marketplace AI**:
+  - **Decentralized Decision-Making**: The Blue team's task allocation is governed by a decentralized **Marketplace**. An auction mechanism efficiently assigns tasks to the agent that can execute them at the lowest "cost," a dynamic value combining travel distance and perceived risk.
+  - **Dynamic Task Valuation**: Targets are no longer static points. Their "bounty" value dynamically changes based on threat level, intelligence freshness, and cross-validation from multiple scouts.
+  - **Automatic Task Bundling**: The market AI automatically groups spatially and temporally close targets into high-value "bundle" tasks, encouraging strikers to perform coordinated, multi-target strikes instead of "one-by-one" attacks.
+  - **Role Specialization & Visual ID**: The swarm is divided into **Scouts** (light blue) and **Strikers** (dark blue).
+    - **Scouts** proactively search the battlefield and publish discovered enemies as "bounty" tasks to the market.
+    - **Strikers** act as rational "bounty hunters," assessing risk and bidding on tasks to execute attacks.
+
+- **Red Team: Modular Mission-Driven AI**:
+  - **Mission + ROE Framework**: The Red Team's AI is no longer a monolithic script. It combines high-level **Missions** (the strategic goal) with low-level **Rules of Engagement (ROE)** (the tactical reaction).
+  - **Diverse Tactical Profiles**: This framework allows for the creation of numerous, distinct enemy behaviors selectable in the GUI, including:
+    - **Armed Assault**: Aggressively advances towards a key point, engaging any target of opportunity en route.
+    - **Stealth Infiltration**: Prioritizes reaching a key point by actively evading combat unless absolutely necessary.
+    - **Area Sweep Force**: Patrols a designated zone with the express purpose of seeking and destroying all hostile units.
+    - **Zombie Charge (Legacy)**: The original, predictable direct-attack strategy, retained for baseline comparisons.
+
 - **Scientific Experimentation Framework**:
   - **Parallelized Simulation**: Leverages Python's `multiprocessing` module to run numerous independent simulation instances in parallel, enabling rapid generation of statistically significant results.
   - **Quantitative Evaluation**: Automatically generates a **Payoff Matrix** to scientifically measure the performance of different tactical matchups.
-- **Visual Replay & Analysis**: Every simulation run is logged to a detailed `.json` file. A standalone **Apollo Replayer** (`replay.py`) provides perfect visual playback of the engagement, including real-time agent status and the dynamic state of market tasks.
+  - **Comprehensive Logging**: Generates a detailed `experiment_summary.json` for each experiment suite, logging all configurations, parameters, and run-by-run results for full reproducibility.
+
+- **Visual Replay & Analysis**:
+  - **Apollo Replayer**: A standalone viewer (`replay.py`) provides perfect visual playback of every engagement.
+  - **Advanced Visualization**: The replayer visualizes market tasks, highlights high-value targets, renders bundle tasks as distinct strategic objectives, and uses unique colors for different agent roles, providing deep tactical insight at a glance.
 
 ---
 
@@ -37,10 +50,15 @@ The core feature of the current version (v2.5) is a **decentralized, "intelligen
 ## How to Run
 
 1.  **Environment Setup**:
-    It is recommended to use a virtual environment like Conda or venv.
+    It is highly recommended to use a virtual environment.
     ```bash
+    # Using Conda
     conda create -n swarm python=3.9
     conda activate swarm
+
+    # Or using venv
+    python -m venv swarm_env
+    source swarm_env/bin/activate  # On Windows: swarm_env\Scripts\activate
     ```
 
 2.  **Install Dependencies**:
@@ -51,18 +69,20 @@ The core feature of the current version (v2.5) is a **decentralized, "intelligen
 3.  **Launch the Athena Console**:
     This is the main entry point of the application. It provides a GUI to configure and launch experiments.
     ```bash
-    python main_window.py
+    python main.py
     ```
 
 4.  **Run an Experiment**:
-    - In the console GUI, you can select the Red team's strategy and adjust the Blue team's force composition.
-    - Click the **"Run Experiment Suite"** button. The application will run 10 headless simulations in the background (this can be configured in `analysis/experiment_manager.py`).
-    - After completion, the resulting Payoff Matrix will be displayed in the results text box.
+    - In the **Athena Console** GUI, you can now select a sophisticated strategy for the Red Team from the dropdown menu (e.g., "Armed Assault," "Stealth Infiltration").
+    - You can adjust the Blue Team's force composition (Scouts vs. Strikers) using the slider.
+    - Click the **"Run Experiment Suite"** button. The application will run 10 headless simulations in the background.
+    - After completion, the resulting Payoff Matrix will be displayed in the results text box, and a detailed `experiment_summary.json` will be saved to the root directory.
 
 5.  **Watch a Replay**:
-    - Detailed log files are automatically saved to the `replays/` directory after an experiment.
+    - Detailed log files (`.json`) are automatically saved to the `replays/` directory after an experiment.
     - In the console GUI, click **"Refresh Replay List"**. The new log files will appear.
-    - **Double-click** any log file in the list to launch the Apollo Replayer and watch a full visual playback of that specific simulation run.
+    - **Double-click** any log file in the list to launch the Apollo Replayer.
+    - In the replay, you can now clearly distinguish light blue Scouts from dark blue Strikers and observe the complex market dynamics.
 
 ---
 
