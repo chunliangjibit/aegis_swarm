@@ -1,5 +1,6 @@
-# Aegis Swarm 2.0 - Core Agent Class (Ultimate Version)
-# DECISIVE FIX v4: Reverted bidding logic to pure COST MINIMIZATION to ensure offensive behavior.
+# Aegis Swarm 3.0 - Core Agent Class (Patch 3.0.5 - Final Stand)
+# PATCH: Removed the fundamentally flawed "Rationality Check" in the bidding
+# function, which was the true root cause of the behavioral deadlock.
 
 import pygame
 import uuid
@@ -9,7 +10,7 @@ import time
 from core.task import Task
 
 class Agent:
-    def __init__(self, team_config, role_config, initial_pos):
+    def __init__(self, team_config, role_config, initial_pos, market_config):
         self.id = uuid.uuid4(); self.is_alive = True
         self.team_id = team_config['id']; self.color = team_config['color']
         self.role_template = role_config['role_template']; self.weapon_template = role_config.get('weapon_template')
@@ -17,6 +18,7 @@ class Agent:
         self.max_health = self.role_template['health']; self.health = self.role_template['health']
         self.max_speed = self.role_template['max_speed']; self.perception_radius = self.role_template['perception_radius']
         self.drone_radius = self.role_template['drone_radius']
+        self.market_config = market_config
         self.pos = np.array(initial_pos, dtype=float)
         random_velocity = np.random.uniform(-1, 1, size=2)
         norm = np.linalg.norm(random_velocity)
@@ -24,7 +26,9 @@ class Agent:
         else: self.velocity = np.array([self.max_speed, 0], dtype=float)
         self.acceleration = np.array([0.0, 0.0], dtype=float)
         self.target_pos = None; self.is_detonating = False
-        self.tour = []; self.tour_cost = 0.0; self.base_pos = self.pos.copy()
+        self.tour = []
+        self.current_sub_task_index = -1
+        self.base_pos = self.pos.copy()
         self.self_defense_radius = 75.0; self.group_id = 0
         self.time_of_death = None; self.death_linger_duration = 0.5
 
@@ -33,37 +37,79 @@ class Agent:
             return current_time - self.time_of_death > self.death_linger_duration
         return self.health <= 0
 
-    def _calculate_tour_cost(self, tour):
-        if not tour: return 0.0
-        points = [self.base_pos] + [t.position for t in tour] + [self.base_pos]
-        return np.sum(np.linalg.norm(np.diff(points, axis=0), axis=1))
+    def assess_risk(self, task, all_market_tasks):
+        risk_score = 0.0
+        assessment_radius_sq = self.market_config['RISK_ASSESSMENT_RADIUS'] ** 2
+        for other_task in all_market_tasks:
+            if other_task.id == task.id or other_task.status != 'OPEN': continue
+            dist_sq = np.sum((task.position - other_task.position)**2)
+            if dist_sq < assessment_radius_sq:
+                risk_score += 1.0 
+        return risk_score
 
-    def calculate_bid_for_task(self, task: Task):
-        """
-        Calculates the marginal cost of adding a new task to the current tour.
-        This pure cost is the agent's bid. The lowest bidder wins.
-        """
-        # Since agents only bid when their tour is empty, this is the round-trip cost.
-        return np.linalg.norm(self.pos - task.position) + np.linalg.norm(task.position - self.base_pos)
+    def calculate_bid_for_task(self, task: Task, all_market_tasks):
+        if not self.weapon_template: return None
+
+        # Step 1: Calculate the base travel cost (distance)
+        travel_cost = np.linalg.norm(self.pos - task.position) + np.linalg.norm(task.position - self.base_pos)
+
+        # Step 2: Assess the risk
+        risk_score = self.assess_risk(task, all_market_tasks)
+
+        # Step 3: Calculate the final bid (cost adjusted by risk)
+        risk_factor = self.market_config['RISK_AVERSION_FACTOR']
+        final_bid = travel_cost * (1 + risk_score * risk_factor)
+
+        # --- [THE FINAL, CRITICAL FIX] ---
+        # The flawed "Rationality Check" has been completely removed.
+        # The core logic of "lowest cost/risk wins" is sufficient and robust.
+        # if final_bid > task.current_value * 50:
+        #      return None
+
+        return final_bid
 
     def add_task_to_tour(self, task: Task):
         self.tour = [task]
-        self.tour_cost = self._calculate_tour_cost(self.tour)
+        if task.is_bundle and task.sub_tasks:
+            self.current_sub_task_index = 0
+        else:
+            self.current_sub_task_index = -1
+
+    def _update_target_from_tour(self):
+        if not self.tour:
+            self.target_pos = None
+            return
+        active_task = self.tour[0]
+        if active_task.is_bundle:
+            if self.current_sub_task_index != -1 and self.current_sub_task_index < len(active_task.sub_tasks):
+                self.target_pos = active_task.sub_tasks[self.current_sub_task_index].position
+            else:
+                self.tour = []
+                self.target_pos = None
+        else:
+            self.target_pos = active_task.position
 
     def apply_movement_physics(self, dt, boundary_behavior, screen_width, screen_height):
         if self.health <= 0:
-            self.velocity *= 0.9
-            self.pos += self.velocity * dt * 50
+            self.velocity *= 0.9; self.pos += self.velocity * dt * 50
             return
-            
-        # Task completion logic
-        if self.tour and self.target_pos is not None:
-            # Strikers complete tasks by detonating (handled in strategy)
-            # Scouts complete tasks by arriving
-            if not self.weapon_template and np.linalg.norm(self.pos - self.target_pos) < self.drone_radius * 2:
-                self.tour.pop(0)
 
-        # Physics Calculation
+        if self.tour:
+            active_task = self.tour[0]
+            if active_task.is_bundle:
+                if self.current_sub_task_index < len(active_task.sub_tasks):
+                    current_sub_task = active_task.sub_tasks[self.current_sub_task_index]
+                    if current_sub_task.status == 'COMPLETED':
+                        self.current_sub_task_index += 1
+                else:
+                    active_task.complete()
+                    self.tour = []
+            else:
+                if active_task.status == 'COMPLETED':
+                    self.tour = []
+        
+        self._update_target_from_tour()
+
         accel_norm = np.linalg.norm(self.acceleration)
         if accel_norm > 1.0: self.acceleration = self.acceleration / accel_norm
         self.velocity += self.acceleration
@@ -83,17 +129,14 @@ class Agent:
         if self.health <= 0: return
         self.health -= amount
         if self.health <= 0:
-            self.health = 0
-            if self.time_of_death is None:
-                self.is_alive = False
-                self.time_of_death = time.time()
+            self.health = 0; self.is_alive = False
+            if self.time_of_death is None: self.time_of_death = time.time()
 
     def draw(self, screen, config):
         draw_pos = (int(self.pos[0]), int(self.pos[1]))
         if self.time_of_death is None:
             pygame.draw.circle(screen, self.color, draw_pos, self.drone_radius)
-            bar_width = self.drone_radius * 2.5
-            bar_height = 4
+            bar_width = self.drone_radius * 2.5; bar_height = 4
             bar_x = self.pos[0] - bar_width / 2
             bar_y = self.pos[1] - self.drone_radius - bar_height - 5
             health_percentage = self.health / self.max_health

@@ -1,34 +1,47 @@
-# Aegis Swarm 2.0 - Experiment Manager (with Organized Logging)
-# UPGRADED: All detailed simulation logs are now saved into a dedicated 'replays' folder.
+# Aegis Swarm 3.0 - Experiment Manager (Patch 3.0.4 - Hardened)
+# PATCH: Added a top-level try-except block to the simulation task to
+# catch and report any previously silent exceptions.
 
-import copy, time, json, multiprocessing, uuid, os # 【新增】: 导入 os 模块
+import copy, time, json, multiprocessing, uuid, os, traceback
 
 from core.battlefield import Battlefield
 
 def run_single_sim_task(config_and_id):
     config, sim_id = config_and_id
-    import pygame
-    pygame.init()
-    battlefield = Battlefield(config)
-    start_time = time.time(); max_duration_seconds = 60
-    simulation_log = {"metadata": {}, "timestamps": []}
-    blue_id, red_id = config['TEAM_BLUE_CONFIG']['id'], config['TEAM_RED_CONFIG']['id']
-    initial_blue_value, initial_red_value = _calculate_team_value(battlefield, blue_id), _calculate_team_value(battlefield, red_id)
-    current_time, dt = 0.0, 0.016
-    while True:
-        battlefield.update(dt=dt); current_time += dt
-        snapshot = battlefield.get_snapshot(); snapshot['time'] = round(current_time, 3)
-        simulation_log["timestamps"].append(snapshot)
-        blue_alive, red_alive = snapshot['blue_count'] > 0, snapshot['red_count'] > 0
-        if not blue_alive or not red_alive or (time.time() - start_time > max_duration_seconds): break
-    final_blue_value, final_red_value = _calculate_team_value(battlefield, blue_id), _calculate_team_value(battlefield, red_id)
-    payoff = (initial_red_value - final_red_value) - (initial_blue_value - final_blue_value)
-    simulation_log["metadata"] = {
-        "simulation_id": sim_id, "blue_strategy": config['TEAM_BLUE_CONFIG']['strategy_name'],
-        "red_strategy": config['TEAM_RED_CONFIG']['strategy_name'], "duration": round(current_time, 2),
-        "result": { "payoff": round(payoff, 2), "blue_survivors": battlefield.get_snapshot()['blue_count'], "red_survivors": battlefield.get_snapshot()['red_count'] }
-    }
-    return simulation_log
+    try:
+        import pygame
+        pygame.init()
+        battlefield = Battlefield(config)
+        start_time = time.time(); max_duration_seconds = 60
+        simulation_log = {"metadata": {}, "timestamps": []}
+        blue_id, red_id = config['TEAM_BLUE_CONFIG']['id'], config['TEAM_RED_CONFIG']['id']
+        initial_blue_value, initial_red_value = _calculate_team_value(battlefield, blue_id), _calculate_team_value(battlefield, red_id)
+        current_time, dt = 0.0, 0.016
+        while True:
+            battlefield.update(dt=dt); current_time += dt
+            snapshot = battlefield.get_snapshot(); snapshot['time'] = round(current_time, 3)
+            simulation_log["timestamps"].append(snapshot)
+            blue_alive, red_alive = snapshot['blue_count'] > 0, snapshot['red_count'] > 0
+            if not blue_alive or not red_alive or (time.time() - start_time > max_duration_seconds): break
+        final_blue_value, final_red_value = _calculate_team_value(battlefield, blue_id), _calculate_team_value(battlefield, red_id)
+        payoff = (initial_red_value - final_red_value) - (initial_blue_value - final_blue_value)
+        simulation_log["metadata"] = {
+            "simulation_id": sim_id, "blue_strategy": config['TEAM_BLUE_CONFIG']['strategy_name'],
+            "red_strategy": config['TEAM_RED_CONFIG']['strategy_name'], "duration": round(current_time, 2),
+            "result": { "payoff": round(payoff, 2), "blue_survivors": battlefield.get_snapshot()['blue_count'], "red_survivors": battlefield.get_snapshot()['red_count'] }
+        }
+        return simulation_log
+    except Exception as e:
+        # --- [CRITICAL FIX] THIS IS THE BLACK BOX ---
+        print(f"--- FATAL ERROR IN SIMULATION WORKER: {sim_id} ---")
+        print(f"Error Type: {type(e).__name__}")
+        print(f"Error Details: {e}")
+        print("--- TRACEBACK ---")
+        traceback.print_exc()
+        print("-----------------")
+        # Return a log indicating failure
+        return {"metadata": {"simulation_id": sim_id, "error": str(e)}, "timestamps": []}
+
 
 def _calculate_team_value(battlefield, team_id):
     return sum(agent.health for agent in battlefield.agents if agent.team_id == team_id)
@@ -39,8 +52,6 @@ class ExperimentManager:
         try: self.worker_count = max(1, multiprocessing.cpu_count() - 2)
         except NotImplementedError: self.worker_count = 1
         print(f"Detected {multiprocessing.cpu_count()} CPU cores. Using {self.worker_count} worker processes.")
-        
-        # 【新增】: 创建 replays 文件夹
         self.replays_dir = "replays"
         if not os.path.exists(self.replays_dir):
             os.makedirs(self.replays_dir)
@@ -58,6 +69,9 @@ class ExperimentManager:
                 tasks = []
                 for i in range(runs_per_matchup):
                     run_config = copy.deepcopy(self.base_config)
+                    # These lines are now redundant as they are set in main_window.py, but safe to keep
+                    run_config['TEAM_BLUE_CONFIG']['strategy_name'] = b_strat_name
+                    run_config['TEAM_RED_CONFIG']['strategy_name'] = r_strat_name
                     sim_id = f"sim_{b_strat_name.replace('(', '_').replace(')', '').replace(' ', '')}_vs_{r_strat_name}_{i+1}"
                     tasks.append((run_config, sim_id))
 
@@ -68,21 +82,25 @@ class ExperimentManager:
                 
                 payoff_scores = []
                 for log in simulation_logs:
+                    if "error" in log["metadata"]:
+                        print(f"  Run {log['metadata']['simulation_id']} failed with error: {log['metadata']['error']}")
+                        continue
                     payoff_scores.append(log['metadata']['result']['payoff'])
-                    # 【修改】: 将日志文件保存到 replays 文件夹内
                     log_filename = os.path.join(self.replays_dir, f"{log['metadata']['simulation_id']}.json")
-                    with open(log_filename, 'w') as f:
-                        json.dump(log, f) # Use compact format for smaller files
+                    with open(log_filename, 'w') as f: json.dump(log, f)
                     print(f"    - Detailed log saved to {log_filename}")
+                
+                if payoff_scores:
+                    avg_payoff = sum(payoff_scores) / len(payoff_scores)
+                    self.results[matchup_key] = {'scores': payoff_scores, 'average_payoff': avg_payoff}
+                    print(f"  > Matchup '{matchup_key}' Average Payoff: {avg_payoff:.2f}")
+                else:
+                    print(f"  > Matchup '{matchup_key}' had no successful runs.")
+                    self.results[matchup_key] = {'scores': [], 'average_payoff': 0.0}
 
-                avg_payoff = sum(payoff_scores) / len(payoff_scores)
-                self.results[matchup_key] = {'scores': payoff_scores, 'average_payoff': avg_payoff}
-                print(f"  > Matchup '{matchup_key}' Average Payoff: {avg_payoff:.2f}")
-        
         print("\nParallel Experiment Suite Finished!"); return self.results
 
     def generate_payoff_matrix(self, blue_strategies, red_strategies):
-        # ... (This method is correct and has no changes) ...
         matrix = {}; print("\n--- Payoff Matrix (Blue's Perspective) ---")
         col_width = max(len(s) for s in red_strategies) + 4
         blue_strat_width = max(len(s) for s in blue_strategies)
@@ -99,6 +117,5 @@ class ExperimentManager:
         return matrix
 
     def save_results_to_json(self, filename="experiment_summary.json"):
-        # ... (This method is correct and has no changes) ...
         with open(filename, 'w') as f: json.dump(self.results, f, indent=4)
         print(f"\nSummary results saved to {filename}")
