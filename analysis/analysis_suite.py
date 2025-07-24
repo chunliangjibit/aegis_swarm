@@ -1,27 +1,27 @@
-# Hermes Project: Analysis & Reporting Suite v2.0
-# This script performs a two-part analysis:
-# 1. Macro Analysis: Reads experiment_summary.json for high-level, cross-simulation statistics.
-# 2. Micro Analysis: Reads all individual replay files to generate dynamic, time-series charts,
-#    providing deep insights into the tactical progression of a typical engagement.
+# Hermes Project: Analysis & Reporting Suite v2.1
+# This script performs a two-part analysis: Macro and Micro.
+# v2.1: Added matplotlib.use('Agg') to explicitly set a non-interactive backend,
+#       resolving Qt platform plugin errors on certain environments.
 
 import os
 import json
 import pandas as pd
 import numpy as np
+import matplotlib
+matplotlib.use('Agg') # <-- [关键修复] 在导入pyplot之前，强制使用非交互式后端
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# --- Configuration ---
+# --- Configuration (Unchanged) ---
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 INPUT_JSON = os.path.join(PROJECT_ROOT, 'experiment_summary.json')
 REPLAYS_DIR = os.path.join(PROJECT_ROOT, 'replays')
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, 'reports')
 
-# --- Part A: Macro Analysis Functions ---
+# --- Part A: Macro Analysis Functions (Unchanged) ---
 
 def load_summary_data(json_path):
-    """Loads the summary JSON and transforms it into a clean pandas DataFrame."""
     if not os.path.exists(json_path):
         print(f"Error: Summary file not found at '{os.path.abspath(json_path)}'")
         return None
@@ -84,41 +84,32 @@ def plot_simulation_duration(df, output_dir):
     ax.set_xlabel('Matchup', fontsize=12); ax.set_ylabel('Duration (seconds)', fontsize=12)
     plt.tight_layout(); fig.savefig(os.path.join(output_dir, 'report_simulation_duration.svg'), format='svg'); plt.close(fig)
 
-# --- Part B: Micro Analysis (Time-Series) Functions ---
+# --- Part B: Micro Analysis (Time-Series) Functions (Unchanged) ---
 
 def load_and_process_replay_data(replays_path):
-    """Loads all replay files, extracts time-series data, and aggregates it."""
     if not os.path.exists(replays_path):
         print(f"Warning: Replays directory not found at '{os.path.abspath(replays_path)}'. Skipping time-series charts.")
         return None
-    
     replay_files = [f for f in os.listdir(replays_path) if f.endswith('.json')]
     if not replay_files:
         print("Warning: No replay files found. Skipping time-series charts.")
         return None
-        
     all_replay_dfs = []
     print(f"\nProcessing {len(replay_files)} replay files for time-series analysis...")
     for i, filename in enumerate(replay_files):
         print(f"  - Reading replay {i+1}/{len(replay_files)}: {filename}")
         filepath = os.path.join(replays_path, filename)
-        with open(filepath, 'r') as f:
-            replay_data = json.load(f)
-        
+        with open(filepath, 'r') as f: replay_data = json.load(f)
         timestamps = replay_data.get('timestamps', [])
         if not timestamps: continue
-
         frame_data = []
         for frame in timestamps:
             blue_health = sum(a['health'] for a in frame['agents'] if a['team_id'] == 1)
             blue_max_health = sum(a['max_health'] for a in frame['agents'] if a['team_id'] == 1)
             red_health = sum(a['health'] for a in frame['agents'] if a['team_id'] == 2)
             red_max_health = sum(a['max_health'] for a in frame['agents'] if a['team_id'] == 2)
-            
             frame_info = {
-                'time': frame['time'],
-                'blue_survivors': frame['blue_count'],
-                'red_survivors': frame['red_count'],
+                'time': frame['time'], 'blue_survivors': frame['blue_count'], 'red_survivors': frame['red_count'],
                 'blue_health_pct': 100 * (blue_health / blue_max_health) if blue_max_health > 0 else 0,
                 'red_health_pct': 100 * (red_health / red_max_health) if red_max_health > 0 else 0,
                 'tasks_open': sum(1 for t in frame['tasks'] if t['status'] == 'OPEN'),
@@ -126,99 +117,62 @@ def load_and_process_replay_data(replays_path):
             }
             frame_data.append(frame_info)
         all_replay_dfs.append(pd.DataFrame(frame_data))
-
-    # Aggregate all replay data into a single averaged time-series
     if not all_replay_dfs:
         print("Warning: No valid timestamp data found in replays.")
         return None
-        
     print("Aggregating time-series data...")
     concatenated_df = pd.concat(all_replay_dfs)
-    # To average correctly, we need to handle different simulation lengths.
-    # We will interpolate each series onto a common time index.
     max_time = concatenated_df['time'].max()
-    common_time_index = np.arange(0, max_time, 0.1) # Resample every 0.1s
-    
+    common_time_index = np.arange(0, max_time, 0.1)
     resampled_dfs = []
     for df in all_replay_dfs:
         df = df.set_index('time').sort_index()
-        df = df[~df.index.duplicated(keep='first')] # Remove duplicate time steps if any
+        df = df[~df.index.duplicated(keep='first')]
         df_reindexed = df.reindex(df.index.union(common_time_index)).interpolate(method='index').loc[common_time_index]
-        resampled_dfs.append(df_reindexed.ffill().bfill()) # Fill any remaining NaNs
-        
+        resampled_dfs.append(df_reindexed.ffill().bfill())
     aggregated_df = pd.concat(resampled_dfs).groupby(level=0).mean()
     print("Time-series data processed successfully.")
     return aggregated_df
 
 def plot_timeseries_attrition(df, output_dir):
-    """Chart 5: Plots the average number of surviving units over time."""
     print("Generating Chart 5: Attrition Dynamics Over Time...")
     plt.style.use('seaborn-v0_8-whitegrid')
     fig, ax = plt.subplots(figsize=(12, 7))
-
     ax.plot(df.index, df['blue_survivors'], label='Blue Team Survivors (Avg.)', color='royalblue')
     ax.plot(df.index, df['red_survivors'], label='Red Team Survivors (Avg.)', color='crimson')
-    
     ax.set_title('Attrition Dynamics Over Time', fontsize=16, weight='bold')
-    ax.set_xlabel('Time (seconds)', fontsize=12)
-    ax.set_ylabel('Average Number of Surviving Units', fontsize=12)
-    ax.legend()
-    ax.grid(True, which='both', linestyle='--', linewidth=0.5)
-    
-    plt.tight_layout()
-    fig.savefig(os.path.join(output_dir, 'report_timeseries_attrition.svg'), format='svg')
-    plt.close(fig)
+    ax.set_xlabel('Time (seconds)', fontsize=12); ax.set_ylabel('Average Number of Surviving Units', fontsize=12)
+    ax.legend(); ax.grid(True, which='both', linestyle='--', linewidth=0.5)
+    plt.tight_layout(); fig.savefig(os.path.join(output_dir, 'report_timeseries_attrition.svg'), format='svg'); plt.close(fig)
 
 def plot_timeseries_swarm_health(df, output_dir):
-    """Chart 6: Plots the average swarm health percentage over time."""
     print("Generating Chart 6: Swarm Integrity Over Time...")
     plt.style.use('seaborn-v0_8-whitegrid')
     fig, ax = plt.subplots(figsize=(12, 7))
-
     ax.plot(df.index, df['blue_health_pct'], label='Blue Team Health % (Avg.)', color='skyblue')
     ax.plot(df.index, df['red_health_pct'], label='Red Team Health % (Avg.)', color='lightcoral')
-
     ax.set_title('Swarm Integrity Over Time', fontsize=16, weight='bold')
-    ax.set_xlabel('Time (seconds)', fontsize=12)
-    ax.set_ylabel('Average Total Health (%)', fontsize=12)
-    ax.set_ylim(0, 101)
-    ax.legend()
-    ax.grid(True, which='both', linestyle='--', linewidth=0.5)
-
-    plt.tight_layout()
-    fig.savefig(os.path.join(output_dir, 'report_timeseries_swarm_health.svg'), format='svg')
-    plt.close(fig)
+    ax.set_xlabel('Time (seconds)', fontsize=12); ax.set_ylabel('Average Total Health (%)', fontsize=12)
+    ax.set_ylim(0, 101); ax.legend(); ax.grid(True, which='both', linestyle='--', linewidth=0.5)
+    plt.tight_layout(); fig.savefig(os.path.join(output_dir, 'report_timeseries_swarm_health.svg'), format='svg'); plt.close(fig)
     
 def plot_timeseries_market_efficiency(df, output_dir):
-    """Chart 7: Plots Blue Team's market task status over time."""
     print("Generating Chart 7: Blue Team Market Efficiency Over Time...")
     plt.style.use('seaborn-v0_8-whitegrid')
     fig, ax = plt.subplots(figsize=(12, 7))
-
     ax.stackplot(df.index, df['tasks_open'], df['tasks_assigned'], 
                  labels=['Open Tasks (Avg.)', 'Assigned Tasks (Avg.)'],
                  colors=['gold', 'darkorange'])
-
     ax.set_title('Blue Team Market Efficiency Over Time', fontsize=16, weight='bold')
-    ax.set_xlabel('Time (seconds)', fontsize=12)
-    ax.set_ylabel('Average Number of Tasks', fontsize=12)
-    ax.legend(loc='upper left')
-    ax.grid(True, which='both', linestyle='--', linewidth=0.5)
+    ax.set_xlabel('Time (seconds)', fontsize=12); ax.set_ylabel('Average Number of Tasks', fontsize=12)
+    ax.legend(loc='upper left'); ax.grid(True, which='both', linestyle='--', linewidth=0.5)
+    plt.tight_layout(); fig.savefig(os.path.join(output_dir, 'report_timeseries_market_efficiency.svg'), format='svg'); plt.close(fig)
 
-    plt.tight_layout()
-    fig.savefig(os.path.join(output_dir, 'report_timeseries_market_efficiency.svg'), format='svg')
-    plt.close(fig)
-
+# --- Main Execution Block (Unchanged) ---
 def main():
-    """Main function to run the complete analysis suite."""
-    print("="*50)
-    print("Starting Hermes Project v2.0: Deep Analysis Suite")
-    print("="*50)
-    
+    print("="*50); print("Starting Hermes Project v2.1: Deep Analysis Suite"); print("="*50)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     print(f"--> Reports will be saved in '{os.path.abspath(OUTPUT_DIR)}' directory.")
-
-    # --- Part A: Run Macro Analysis ---
     print("\n--- Running Part A: Macro-level Strategy Comparison ---")
     summary_df = load_summary_data(INPUT_JSON)
     if summary_df is not None:
@@ -229,8 +183,6 @@ def main():
         print("Part A analysis completed.")
     else:
         print("Could not load summary data. Skipping Part A.")
-
-    # --- Part B: Run Micro (Time-Series) Analysis ---
     print("\n--- Running Part B: Micro-level Tactical Progression ---")
     timeseries_df = load_and_process_replay_data(REPLAYS_DIR)
     if timeseries_df is not None:
@@ -240,10 +192,7 @@ def main():
         print("Part B analysis completed.")
     else:
         print("Could not process replay data. Skipping Part B.")
-        
-    print("\n" + "="*50)
-    print("Analysis script finished.")
-    print("="*50)
+    print("\n" + "="*50); print("Analysis script finished."); print("="*50)
 
 if __name__ == '__main__':
     main()
